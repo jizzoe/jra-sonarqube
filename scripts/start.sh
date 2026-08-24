@@ -1,0 +1,89 @@
+#!/bin/bash
+# Slice 08 - cold start: terraform apply -> restore -> reindex -> health gate.
+set -euo pipefail
+DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+ROOT="$(cd "$DIR/.." && pwd)"
+source "$DIR/lib.sh"
+
+wait_for_task_running() {
+  local arn="" last="" waited=0
+  while [ "$waited" -lt 900 ]; do
+    arn="$(task_arn)"
+    if [ -n "$arn" ]; then
+      last="$("${AWS[@]}" ecs describe-tasks --cluster "$CLUSTER" --tasks "$arn" \
+        --query 'tasks[0].lastStatus' --output text 2>/dev/null || true)"
+      [ "$last" = "RUNNING" ] && { log "Task RUNNING: ${arn}"; return 0; }
+    fi
+    sleep 10
+    waited=$((waited + 10))
+  done
+  fail "task did not reach RUNNING within 900s"
+}
+
+wait_for_new_task() {
+  local old="$1" arn="" waited=0
+  while [ "$waited" -lt 900 ]; do
+    arn="$(task_arn)"
+    if [ -n "$arn" ] && [ "$arn" != "$old" ]; then
+      log "New task RUNNING: ${arn}"
+      return 0
+    fi
+    sleep 10
+    waited=$((waited + 10))
+  done
+  warn "did not observe a new task ARN; proceeding to health gate"
+}
+
+wait_for_healthy() {
+  local ip="" waited=0
+  while [ "$waited" -lt 1500 ]; do
+    ip="$(task_ip)"
+    if [ -n "$ip" ] && [ "$ip" != "None" ] && sonar_up "$ip"; then
+      log "SonarQube UP at ${ip}:9000"
+      return 0
+    fi
+    sleep 20
+    waited=$((waited + 20))
+  done
+  fail "SonarQube did not become healthy within 1500s"
+}
+
+log "Cold start: ${SERVICE} on ${CLUSTER}"
+
+# Idempotency guard: if a host is already up we assume a session is running.
+# (Re-running restore here would overwrite in-session data, so we refuse.)
+if [ -n "$(host_instance_id)" ]; then
+  log "Host already in-service; treating as already running (no-op)."
+  log "To restart cleanly, run scripts/cold-stop.sh first."
+  exit 0
+fi
+
+log "1/6 terraform init (if needed) + apply"
+if [ ! -d "$ROOT/.terraform" ]; then
+  (cd "$ROOT" && terraform init -input=false -no-color)
+fi
+(cd "$ROOT" && terraform apply -auto-approve -no-color)
+
+log "2/6 ensure host capacity (ECS managed scaling is slow; nudge ASG desired 1)"
+"${AWS[@]}" autoscaling update-auto-scaling-group \
+  --auto-scaling-group-name "$ASG" --desired-capacity 1 >/dev/null
+
+id="$(wait_for_host 900)"
+log "Host up: ${id}"
+
+log "3/6 wait for the task to reach RUNNING"
+wait_for_task_running
+
+log "4/6 restore newest verified dump + clear Elasticsearch index"
+run_on_host "$DIR/restore.sh"
+
+log "5/6 force new deployment (SonarQube reindexes from the restored DB)"
+old_arn="$(task_arn)"
+"${AWS[@]}" ecs update-service --cluster "$CLUSTER" --service "$SERVICE" \
+  --force-new-deployment >/dev/null
+wait_for_new_task "$old_arn"
+
+log "6/6 health gate (/api/system/status = UP)"
+wait_for_healthy
+
+log "Cold start complete. SonarQube is UP (status via scripts/status.sh)."

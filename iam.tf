@@ -47,6 +47,27 @@ resource "aws_iam_role" "platform_terraform" {
           Resource = "*"
         },
         {
+          # Slice 08 orchestration: drive the host-side lifecycle scripts via
+          # SSM SendCommand (AWS-RunShellScript). Scoped to EC2 instances and
+          # the AWS-provided run-shell document.
+          Effect = "Allow"
+          Action = ["ssm:SendCommand"]
+          Resource = [
+            "arn:aws:ec2:${local.region}:${local.account_id}:instance/*",
+            "arn:aws:ssm:${local.region}:${local.account_id}:document/AWS-RunShellScript",
+          ]
+        },
+        {
+          Effect = "Allow"
+          Action = [
+            "ssm:DescribeInstanceInformation",
+            "ssm:GetCommandInvocation",
+            "ssm:ListCommandInvocations",
+            "ssm:DescribeDocument",
+          ]
+          Resource = "*"
+        },
+        {
           Effect = "Allow"
           Action = [
             "ecr:GetAuthorizationToken",
