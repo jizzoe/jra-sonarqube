@@ -39,3 +39,9 @@ variable "host_instance_type" {
   type        = string
   default     = "m7i-flex.large"
 }
+
+variable "sonarqube_image" {
+  description = "Pinned SonarQube Community Build image. 2026.1.x supports PostgreSQL 14-18 (we run postgres:17). Pin a tested version; never 'latest'."
+  type        = string
+  default     = "sonarqube:2026.1.5-community"
+}

@@ -1,5 +1,5 @@
 # ---------------------------------------------------------------------------
-# Slice 04 - PostgreSQL container (slice 05 adds the SonarQube container)
+# Slices 04 + 05 - PostgreSQL + SonarQube containers
 # Two containers in one task, one service; SonarQube reaches PostgreSQL via
 # localhost (shared network namespace in awsvpc mode).
 # ---------------------------------------------------------------------------
@@ -29,8 +29,8 @@ resource "aws_ecs_task_definition" "app" {
   family                   = "jra-sonarqube"
   network_mode             = "awsvpc"
   requires_compatibilities = ["EC2"]
-  cpu                      = "512"
-  memory                   = "1024"
+  cpu                      = "2048"
+  memory                   = "6144"
 
   task_role_arn      = aws_iam_role.sonarqube_task.arn
   execution_role_arn = aws_iam_role.sonarqube_task.arn
@@ -38,6 +38,15 @@ resource "aws_ecs_task_definition" "app" {
   volume {
     name                = "pgdata"
     configure_at_launch = true
+  }
+
+  # SonarQube data: host bind mount. The AWS provider supports only ONE
+  # managed-EBS volume_configuration per aws_ecs_service, which pgdata uses.
+  # (A bind mount on the host root EBS survives task replacement; the managed
+  # EBS is delete-on-termination and is recreated on any container stop.)
+  volume {
+    name      = "sonarqube_data"
+    host_path = "/var/lib/sonarqube-data"
   }
 
   container_definitions = jsonencode([
@@ -81,6 +90,54 @@ resource "aws_ecs_task_definition" "app" {
           "awslogs-stream-prefix" = "postgres"
         }
       }
+    },
+    {
+      name      = "sonarqube"
+      image     = var.sonarqube_image
+      essential = true
+
+      environment = [
+        { name = "SONAR_JDBC_URL", value = "jdbc:postgresql://localhost:5432/sonar" },
+        { name = "SONAR_JDBC_USERNAME", value = "sonar" },
+        { name = "SONAR_ES_BOOTSTRAP_CHECKS_DISABLE", value = "true" },
+      ]
+
+      secrets = [
+        { name = "SONAR_JDBC_PASSWORD", valueFrom = aws_secretsmanager_secret.postgres_app.arn },
+      ]
+
+      portMappings = [
+        { containerPort = 9000, protocol = "tcp" }
+      ]
+
+      mountPoints = [
+        {
+          sourceVolume  = "sonarqube_data"
+          containerPath = "/opt/sonarqube/data"
+          readOnly      = false
+        }
+      ]
+
+      healthCheck = {
+        command     = ["CMD-SHELL", "curl -fsS http://localhost:9000/api/system/status || exit 1"]
+        interval    = 30
+        timeout     = 10
+        retries     = 10
+        startPeriod = 300
+      }
+
+      logConfiguration = {
+        logDriver = "awslogs"
+        options = {
+          "awslogs-group"         = "/ecs/jra-sonarqube"
+          "awslogs-region"        = var.aws_region
+          "awslogs-create-group"  = "true"
+          "awslogs-stream-prefix" = "sonarqube"
+        }
+      }
+
+      cpu               = 1536
+      memoryReservation = 4096
     }
   ])
 }
