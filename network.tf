@@ -15,12 +15,13 @@ resource "aws_vpc" "main" {
   tags = { Name = "jra-sonarqube-vpc" }
 }
 
-# Public subnet: outbound via IGW; instances do NOT auto-get a public IP.
+# Public subnet: outbound via IGW; instances auto-get a public IP (Option 2:
+# SSM + image pulls over the internet; inbound still blocked by security groups).
 resource "aws_subnet" "public" {
   vpc_id                  = aws_vpc.main.id
   cidr_block              = "10.0.1.0/24"
   availability_zone       = data.aws_availability_zones.available.names[0]
-  map_public_ip_on_launch = false
+  map_public_ip_on_launch = true
 
   tags = { Name = "jra-sonarqube-public" }
 }
@@ -92,64 +93,6 @@ resource "aws_security_group" "postgres" {
   }
 
   tags = { Name = "jra-sonarqube-postgres" }
-}
-
-# Endpoint SG: allow HTTPS from within the VPC
-resource "aws_security_group" "endpoints" {
-  name        = "jra-sonarqube-endpoints"
-  description = "VPC endpoint SG: HTTPS from the VPC"
-  vpc_id      = aws_vpc.main.id
-
-  ingress {
-    description = "HTTPS to endpoints from the VPC"
-    from_port   = 443
-    to_port     = 443
-    protocol    = "tcp"
-    cidr_blocks = [aws_vpc.main.cidr_block]
-  }
-
-  egress {
-    from_port   = 0
-    to_port     = 0
-    protocol    = "-1"
-    cidr_blocks = ["0.0.0.0/0"]
-  }
-
-  tags = { Name = "jra-sonarqube-endpoints" }
-}
-
-# SSM VPC endpoints (Session Manager works without a public IP)
-resource "aws_vpc_endpoint" "ssm" {
-  vpc_id              = aws_vpc.main.id
-  service_name        = "com.amazonaws.${var.aws_region}.ssm"
-  vpc_endpoint_type   = "Interface"
-  subnet_ids          = [aws_subnet.public.id]
-  security_group_ids  = [aws_security_group.endpoints.id]
-  private_dns_enabled = true
-
-  tags = { Name = "jra-sonarqube-ssm-ep" }
-}
-
-resource "aws_vpc_endpoint" "ec2messages" {
-  vpc_id              = aws_vpc.main.id
-  service_name        = "com.amazonaws.${var.aws_region}.ec2messages"
-  vpc_endpoint_type   = "Interface"
-  subnet_ids          = [aws_subnet.public.id]
-  security_group_ids  = [aws_security_group.endpoints.id]
-  private_dns_enabled = true
-
-  tags = { Name = "jra-sonarqube-ec2messages-ep" }
-}
-
-resource "aws_vpc_endpoint" "ssmmessages" {
-  vpc_id              = aws_vpc.main.id
-  service_name        = "com.amazonaws.${var.aws_region}.ssmmessages"
-  vpc_endpoint_type   = "Interface"
-  subnet_ids          = [aws_subnet.public.id]
-  security_group_ids  = [aws_security_group.endpoints.id]
-  private_dns_enabled = true
-
-  tags = { Name = "jra-sonarqube-ssmmessages-ep" }
 }
 
 # S3 gateway endpoint (free; avoids NAT for S3 traffic)
