@@ -66,6 +66,7 @@ resource "aws_iam_role" "platform_terraform" {
             "s3:PutBucketVersioning",
             "s3:PutEncryptionConfiguration",
             "s3:PutBucketPublicAccessBlock",
+            "s3:PutLifecycleConfiguration",
             "s3:CreateBucket",
             "s3:DeleteBucket",
           ]
