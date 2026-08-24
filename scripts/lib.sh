@@ -160,18 +160,25 @@ task_ip() {
     --output text 2>/dev/null || true
 }
 
-# Fetch the SonarQube admin password from Secrets Manager (best-effort; "" if unavailable).
-sonar_admin_password() {
+# Candidate SonarQube admin passwords, one per line (first working match wins).
+# Precedence: SONAR_ADMIN_PASSWORD env -> sonarqube/admin secret -> SonarQube's
+# out-of-box default "admin" (the secret is not currently injected into the task).
+sonar_admin_passwords() {
+  if [ -n "${SONAR_ADMIN_PASSWORD:-}" ]; then
+    printf '%s\n' "$SONAR_ADMIN_PASSWORD"
+  fi
   local raw
   raw="$("${AWS[@]}" secretsmanager get-secret-value --secret-id sonarqube/admin \
     --query 'SecretString' --output text 2>/dev/null || true)"
-  [ -z "$raw" ] && { echo ""; return 0; }
-  case "$raw" in
-    *'"password"'*)
-      printf '%s' "$raw" | sed -n 's/.*"password"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p'
-      ;;
-    *) printf '%s' "$raw" ;;
-  esac
+  if [ -n "$raw" ]; then
+    case "$raw" in
+      *'"password"'*)
+        printf '%s\n' "$raw" | sed -n 's/.*"password"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p'
+        ;;
+      *) printf '%s\n' "$raw" ;;
+    esac
+  fi
+  printf 'admin\n'
 }
 
 # curl a SonarQube API path from the host (which can reach the task ENI).

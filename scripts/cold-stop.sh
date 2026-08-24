@@ -5,22 +5,30 @@ DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 source "$DIR/lib.sh"
 
 drain_ce() {
-  local ip="" pw="" auth="" body="" pending="" inprog="" waited=0
+  local ip="" body="" pw="" auth="" pending="" inprog="" waited=0 found=""
   ip="$(task_ip)"
   if [ -z "$ip" ] || [ "$ip" = "None" ]; then
     warn "no running task; skipping in-flight analysis check"
     return 0
   fi
-  pw="$(sonar_admin_password)"
-  if [ -n "$pw" ]; then
+  # /api/ce/activity_status requires auth; find a credential that works.
+  while read -r pw; do
+    [ -z "$pw" ] && continue
     auth="$(printf 'admin:%s' "$pw" | base64 | tr -d '\n')"
-  else
-    warn "admin password unavailable; CE status will be checked unauthenticated (may 401)"
+    body="$(sonar_api "$ip" "/api/ce/activity_status" "$auth")"
+    if printf '%s' "$body" | grep -q '"pending"'; then
+      found="$auth"
+      break
+    fi
+  done < <(sonar_admin_passwords)
+  if [ -z "$found" ]; then
+    warn "CE status unavailable (no working credential); skipping drain - ensure no scan is running"
+    return 0
   fi
   while [ "$waited" -lt 1200 ]; do
-    body="$(sonar_api "$ip" "/api/ce/activity_status" "$auth")"
+    body="$(sonar_api "$ip" "/api/ce/activity_status" "$found")"
     if ! printf '%s' "$body" | grep -q '"pending"'; then
-      warn "CE status unavailable (auth or endpoint); skipping drain - ensure no scan is running"
+      warn "CE status became unavailable; proceeding"
       return 0
     fi
     pending="$(printf '%s' "$body" | sed -n 's/.*"pending":[[:space:]]*\([0-9]*\).*/\1/p')"
