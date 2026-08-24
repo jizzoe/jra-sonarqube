@@ -33,3 +33,9 @@ variable "budget_time_period_start" {
   type        = string
   default     = "2026-08-01_00:00"
 }
+
+variable "host_instance_type" {
+  description = "ECS host instance type. m7i-flex.large (2 vCPU / 8 GiB) is free-tier eligible; t3.large (same size) is blocked on free-tier accounts."
+  type        = string
+  default     = "m7i-flex.large"
+}
