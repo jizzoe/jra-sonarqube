@@ -87,6 +87,10 @@ locals {
     #    the SonarQube container user can write regardless of its UID.
     mkdir -p /var/lib/sonarqube-data
     chmod 777 /var/lib/sonarqube-data
+
+    # 5. PostgreSQL data bind-mount directory (UID 999 = postgres).
+    mkdir -p /var/lib/postgresql-data
+    chown 999:999 /var/lib/postgresql-data
   EOT
 }
 

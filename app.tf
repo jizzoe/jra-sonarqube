@@ -35,15 +35,14 @@ resource "aws_ecs_task_definition" "app" {
   task_role_arn      = aws_iam_role.sonarqube_task.arn
   execution_role_arn = aws_iam_role.sonarqube_task.arn
 
+  # PostgreSQL + SonarQube data: host bind mounts. Data lives on the host root
+  # EBS, so it survives task replacement within a session (needed for the
+  # restore -> reindex cold-start sequence) and is destroyed on cold stop.
   volume {
-    name                = "pgdata"
-    configure_at_launch = true
+    name      = "pgdata"
+    host_path = "/var/lib/postgresql-data"
   }
 
-  # SonarQube data: host bind mount. The AWS provider supports only ONE
-  # managed-EBS volume_configuration per aws_ecs_service, which pgdata uses.
-  # (A bind mount on the host root EBS survives task replacement; the managed
-  # EBS is delete-on-termination and is recreated on any container stop.)
   volume {
     name      = "sonarqube_data"
     host_path = "/var/lib/sonarqube-data"
@@ -160,16 +159,6 @@ resource "aws_ecs_service" "app" {
   network_configuration {
     subnets         = [aws_subnet.public.id]
     security_groups = [aws_security_group.app.id]
-  }
-
-  volume_configuration {
-    name = "pgdata"
-    managed_ebs_volume {
-      role_arn    = aws_iam_role.ecs_volume.arn
-      size_in_gb  = 20
-      volume_type = "gp3"
-      encrypted   = true
-    }
   }
 
   depends_on = [aws_ecs_cluster_capacity_providers.main]
