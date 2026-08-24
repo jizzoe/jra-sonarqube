@@ -146,8 +146,7 @@ resource "aws_iam_role" "platform_terraform" {
           Resource = [
             "arn:aws:iam::${local.account_id}:role/jra-sonarqube-task",
             "arn:aws:iam::${local.account_id}:role/jra-sonarqube-deploy",
-            "arn:aws:iam::${local.account_id}:role/jra-ecs-host*",
-            "arn:aws:iam::${local.account_id}:role/jra-ecs-task-execution-*",
+            "arn:aws:iam::${local.account_id}:role/jra-ecs-*",
           ]
         },
         {

@@ -17,6 +17,32 @@ resource "aws_iam_role_policy_attachment" "ecs_host_ecs" {
   policy_arn = "arn:aws:iam::aws:policy/service-role/AmazonEC2ContainerServiceforEC2Role"
 }
 
+# ECS host role: allow the rexray EBS volume plugin to create/attach PGDATA volume
+resource "aws_iam_role_policy" "ecs_host_ebs" {
+  name = "ecs-host-ebs-volume"
+  role = aws_iam_role.ecs_host.id
+
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Effect = "Allow"
+        Action = [
+          "ec2:CreateVolume",
+          "ec2:AttachVolume",
+          "ec2:DetachVolume",
+          "ec2:DeleteVolume",
+          "ec2:DescribeVolumes",
+          "ec2:DescribeInstances",
+          "ec2:CreateTags",
+          "ec2:DeleteTags",
+        ]
+        Resource = "*"
+      },
+    ]
+  })
+}
+
 # Host security group: no inbound, all outbound (Option 2: SSM + image pulls egress)
 resource "aws_security_group" "host" {
   name        = "jra-sonarqube-host"
@@ -109,6 +135,12 @@ resource "aws_autoscaling_group" "ecs_host" {
     key                 = "Name"
     value               = "jra-sonarqube-host"
     propagate_at_launch = true
+  }
+
+  # ECS managed scaling owns desired_capacity (0 when idle, 1 when a task
+  # needs capacity); Terraform only sets the baseline min/max.
+  lifecycle {
+    ignore_changes = [desired_capacity]
   }
 }
 
