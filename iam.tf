@@ -54,7 +54,7 @@ resource "aws_iam_role" "platform_terraform" {
           Action = ["ssm:SendCommand"]
           Resource = [
             "arn:aws:ec2:${local.region}:${local.account_id}:instance/*",
-            "arn:aws:ssm:${local.region}:${local.account_id}:document/AWS-RunShellScript",
+            "arn:aws:ssm:${local.region}::document/AWS-RunShellScript",
           ]
         },
         {
