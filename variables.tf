@@ -5,9 +5,9 @@ variable "aws_region" {
 }
 
 variable "aws_profile" {
-  description = "AWS CLI profile used to authenticate (local credential_process shim over the aws login session)"
+  description = "AWS CLI profile used to authenticate (least-privilege Terraform role)"
   type        = string
-  default     = "terraform"
+  default     = "jra-platform-terraform"
 }
 
 variable "domain" {

@@ -14,7 +14,7 @@ terraform {
     region         = "us-east-1"
     dynamodb_table = "jra-sonarqube-terraform-lock"
     encrypt        = true
-    profile        = "terraform"
+    profile        = "jra-platform-terraform"
   }
 }
 

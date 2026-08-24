@@ -59,26 +59,15 @@ resource "aws_iam_role" "platform_terraform" {
         {
           Effect = "Allow"
           Action = [
-            "s3:ListBucket",
-            "s3:GetBucketLocation",
-            "s3:GetBucketVersioning",
-            "s3:GetEncryptionConfiguration",
-            "s3:PutEncryptionConfiguration",
+            "s3:Get*",
+            "s3:List*",
+            "s3:PutObject",
+            "s3:DeleteObject",
             "s3:PutBucketVersioning",
+            "s3:PutEncryptionConfiguration",
             "s3:PutBucketPublicAccessBlock",
             "s3:CreateBucket",
             "s3:DeleteBucket",
-          ]
-          Resource = "arn:aws:s3:::jra-sonarqube-*"
-        },
-        {
-          Effect = "Allow"
-          Action = [
-            "s3:GetObject",
-            "s3:PutObject",
-            "s3:DeleteObject",
-            "s3:GetObjectVersion",
-            "s3:ListBucketVersions",
           ]
           Resource = [
             "arn:aws:s3:::jra-sonarqube-*",
@@ -90,12 +79,12 @@ resource "aws_iam_role" "platform_terraform" {
           Action = [
             "dynamodb:CreateTable",
             "dynamodb:DeleteTable",
-            "dynamodb:DescribeTable",
+            "dynamodb:Describe*",
             "dynamodb:GetItem",
             "dynamodb:PutItem",
             "dynamodb:DeleteItem",
             "dynamodb:UpdateItem",
-            "dynamodb:ListTables",
+            "dynamodb:List*",
           ]
           Resource = "arn:aws:dynamodb:${local.region}:${local.account_id}:table/jra-sonarqube-*"
         },
@@ -108,6 +97,8 @@ resource "aws_iam_role" "platform_terraform" {
             "route53:ListHostedZones",
             "route53:ListHostedZonesByName",
             "route53:ListResourceRecordSets",
+            "route53:ListTagsForResource",
+            "route53:ListTagsForResources",
             "route53:ChangeResourceRecordSets",
             "route53:GetChange",
           ]
@@ -115,7 +106,7 @@ resource "aws_iam_role" "platform_terraform" {
         },
         {
           Effect   = "Allow"
-          Action   = ["budgets:ViewBudget", "budgets:ModifyBudget"]
+          Action   = ["budgets:ViewBudget", "budgets:ModifyBudget", "budgets:ListTagsForResource"]
           Resource = "arn:aws:budgets::${local.account_id}:budget/*"
         },
         {
@@ -155,7 +146,7 @@ resource "aws_iam_role" "platform_terraform" {
           Resource = [
             "arn:aws:iam::${local.account_id}:role/jra-sonarqube-task",
             "arn:aws:iam::${local.account_id}:role/jra-sonarqube-deploy",
-            "arn:aws:iam::${local.account_id}:role/jra-ecs-host-*",
+            "arn:aws:iam::${local.account_id}:role/jra-ecs-host*",
             "arn:aws:iam::${local.account_id}:role/jra-ecs-task-execution-*",
           ]
         },
@@ -179,11 +170,14 @@ resource "aws_iam_role" "platform_terraform" {
             "iam:AddRoleToInstanceProfile",
             "iam:RemoveRoleFromInstanceProfile",
           ]
-          Resource = "arn:aws:iam::${local.account_id}:role/jra-*"
+          Resource = [
+            "arn:aws:iam::${local.account_id}:role/jra-*",
+            "arn:aws:iam::${local.account_id}:instance-profile/jra-*",
+          ]
         },
         {
           Effect   = "Allow"
-          Action   = ["iam:CreateServiceLinkedRole", "iam:ListRoles"]
+          Action   = ["iam:CreateServiceLinkedRole", "iam:ListRoles", "iam:GetUser", "iam:ListInstanceProfilesForRole", "iam:ListUsers"]
           Resource = "*"
         },
       ]
