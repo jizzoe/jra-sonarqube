@@ -50,26 +50,32 @@ wait_for_healthy() {
 
 log "Cold start: ${SERVICE} on ${CLUSTER}"
 
-# Idempotency guard: if a host is already up we assume a session is running.
-# (Re-running restore here would overwrite in-session data, so we refuse.)
-if [ -n "$(host_instance_id)" ]; then
-  log "Host already in-service; treating as already running (no-op)."
-  log "To restart cleanly, run scripts/cold-stop.sh first."
-  exit 0
+id="$(host_instance_id)"
+
+if [ -n "$id" ]; then
+  # A host is already up. If it was already restored this session, this is a
+  # no-op; otherwise we resume the restore -> reindex -> health tail.
+  marker="$("${AWS[@]}" s3 cp "s3://${BUCKET}/metadata/restored.txt" - 2>/dev/null || true)"
+  if [ "$marker" = "$id" ]; then
+    log "Host ${id} already restored and healthy (no-op)."
+    log "To restart cleanly, run scripts/cold-stop.sh first."
+    exit 0
+  fi
+  log "Host ${id} is up but not yet restored; resuming (restore -> reindex -> health)."
+else
+  log "1/6 terraform init (if needed) + apply"
+  if [ ! -d "$ROOT/.terraform" ]; then
+    (cd "$ROOT" && terraform init -input=false -no-color)
+  fi
+  (cd "$ROOT" && terraform apply -auto-approve -no-color)
+
+  log "2/6 ensure host capacity (ECS managed scaling is slow; nudge ASG desired 1)"
+  "${AWS[@]}" autoscaling update-auto-scaling-group \
+    --auto-scaling-group-name "$ASG" --desired-capacity 1 >/dev/null
+
+  id="$(wait_for_host 900)"
+  log "Host up: ${id}"
 fi
-
-log "1/6 terraform init (if needed) + apply"
-if [ ! -d "$ROOT/.terraform" ]; then
-  (cd "$ROOT" && terraform init -input=false -no-color)
-fi
-(cd "$ROOT" && terraform apply -auto-approve -no-color)
-
-log "2/6 ensure host capacity (ECS managed scaling is slow; nudge ASG desired 1)"
-"${AWS[@]}" autoscaling update-auto-scaling-group \
-  --auto-scaling-group-name "$ASG" --desired-capacity 1 >/dev/null
-
-id="$(wait_for_host 900)"
-log "Host up: ${id}"
 
 log "3/6 wait for the task to reach RUNNING"
 wait_for_task_running
@@ -85,5 +91,7 @@ wait_for_new_task "$old_arn"
 
 log "6/6 health gate (/api/system/status = UP)"
 wait_for_healthy
+
+printf '%s' "$id" | "${AWS[@]}" s3 cp - "s3://${BUCKET}/metadata/restored.txt" >/dev/null
 
 log "Cold start complete. SonarQube is UP (status via scripts/status.sh)."

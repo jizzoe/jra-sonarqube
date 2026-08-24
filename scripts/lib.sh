@@ -116,7 +116,7 @@ ssm_wait() {
 # The script is base64-transported, decoded to /tmp, and executed as root.
 run_on_host() {
   local script="$1"; shift
-  local id name b64 cmd cmd_id
+  local id name b64 cmd cmd_id attempt
   id="$(host_instance_id)"
   [ -z "$id" ] && fail "no in-service host to run $(basename "$script") on"
   wait_ssm_online "$id"
@@ -126,7 +126,17 @@ run_on_host() {
   cmd="echo '$b64' | base64 -d > /tmp/${name} && chmod +x /tmp/${name} && /tmp/${name} $*"
 
   log "Running ${name} on ${id}"
-  cmd_id="$(ssm_send "$id" "$cmd")"
+  # Retry on transient AccessDenied (IAM inline-policy propagation can lag a few
+  # seconds after a terraform apply that touches the role).
+  cmd_id=""
+  for attempt in 1 2 3 4 5; do
+    if cmd_id="$(ssm_send "$id" "$cmd" 2>/dev/null)"; then
+      [ -n "$cmd_id" ] && [ "$cmd_id" != "None" ] && break
+    fi
+    warn "SSM send-command failed (attempt ${attempt}/5); retrying after IAM-propagation delay..."
+    sleep 20
+  done
+  [ -n "$cmd_id" ] && [ "$cmd_id" != "None" ] || fail "SSM send-command failed after 5 attempts"
   ssm_wait "$cmd_id" "$id" || fail "host-side script ${name} failed"
 }
 
