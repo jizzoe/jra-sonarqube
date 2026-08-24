@@ -43,5 +43,5 @@ variable "host_instance_type" {
 variable "sonarqube_image" {
   description = "Pinned SonarQube Community Build image. 2026.1.x supports PostgreSQL 14-18 (we run postgres:17). Pin a tested version; never 'latest'."
   type        = string
-  default     = "sonarqube:2026.1.5-community"
+  default     = "sonarqube:26.8.0.126808-community"
 }

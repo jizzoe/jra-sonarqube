@@ -62,6 +62,14 @@ resource "aws_security_group" "app" {
     self        = true
   }
 
+  ingress {
+    description = "SonarQube web port from the VPC (SSM port-forward via the host)"
+    from_port   = 9000
+    to_port     = 9000
+    protocol    = "tcp"
+    cidr_blocks = [aws_vpc.main.cidr_block]
+  }
+
   egress {
     from_port   = 0
     to_port     = 0

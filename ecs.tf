@@ -82,6 +82,11 @@ locals {
     # 3. Register with the ECS cluster (the agent reads this at its normal
     #    start, which happens after cloud-init/user-data by design).
     echo ECS_CLUSTER=jra-sonarqube >> /etc/ecs/ecs.config
+
+    # 4. SonarQube data bind-mount directory (host_path volume). chmod 777 so
+    #    the SonarQube container user can write regardless of its UID.
+    mkdir -p /var/lib/sonarqube-data
+    chmod 777 /var/lib/sonarqube-data
   EOT
 }
 

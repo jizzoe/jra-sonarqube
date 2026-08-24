@@ -56,13 +56,12 @@ resource "aws_ecs_task_definition" "app" {
       essential = true
 
       environment = [
-        { name = "POSTGRES_USER", value = "postgres" },
+        { name = "POSTGRES_USER", value = "sonar" },
         { name = "POSTGRES_DB", value = "sonar" },
       ]
 
       secrets = [
-        { name = "POSTGRES_PASSWORD", valueFrom = aws_secretsmanager_secret.postgres_superuser.arn },
-        { name = "SONAR_APP_PASSWORD", valueFrom = aws_secretsmanager_secret.postgres_app.arn },
+        { name = "POSTGRES_PASSWORD", valueFrom = aws_secretsmanager_secret.postgres_app.arn },
       ]
 
       mountPoints = [
@@ -74,7 +73,7 @@ resource "aws_ecs_task_definition" "app" {
       ]
 
       healthCheck = {
-        command     = ["CMD-SHELL", "pg_isready -U postgres"]
+        command     = ["CMD-SHELL", "pg_isready -U sonar"]
         interval    = 10
         timeout     = 5
         retries     = 10
@@ -119,7 +118,7 @@ resource "aws_ecs_task_definition" "app" {
       ]
 
       healthCheck = {
-        command     = ["CMD-SHELL", "curl -fsS http://localhost:9000/api/system/status || exit 1"]
+        command     = ["CMD-SHELL", "curl -fsS http://localhost:9000/api/system/status 2>/dev/null | grep -q UP || wget -qO- http://localhost:9000/api/system/status 2>/dev/null | grep -q UP"]
         interval    = 30
         timeout     = 10
         retries     = 10
@@ -147,6 +146,11 @@ resource "aws_ecs_service" "app" {
   cluster         = aws_ecs_cluster.main.id
   task_definition = aws_ecs_task_definition.app.arn
   desired_count   = 1
+
+  # Singleton: stop the old task before starting the new one (the task uses
+  # the full 2 vCPU / 6 GiB of the host, so old+new can't overlap).
+  deployment_minimum_healthy_percent = 0
+  deployment_maximum_percent         = 100
 
   capacity_provider_strategy {
     capacity_provider = aws_ecs_capacity_provider.ec2.name
