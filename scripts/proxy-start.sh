@@ -40,7 +40,7 @@ CADDY
 
 systemctl daemon-reload
 if systemctl is-active --quiet caddy; then
-  systemctl reload caddy
+  systemctl restart caddy
 else
   systemctl enable --now caddy
 fi
