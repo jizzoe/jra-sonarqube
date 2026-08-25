@@ -110,24 +110,34 @@ if [ -z "$id" ]; then
 fi
 log "Host: ${id}"
 
-log "1/6 block new scans + wait for in-flight analysis to drain"
+log "1/8 block new scans + wait for in-flight analysis to drain"
 drain_ce
 
-log "2/6 backup & verify (pg_dump -> S3 + SHA-256)"
+log "2/8 backup & verify (pg_dump -> S3 + SHA-256)"
 run_on_host "$DIR/backup-and-verify.sh"
 
-log "3/6 teardown guard (require a verified dump before destroying)"
+log "3/8 teardown guard (require a verified dump before destroying)"
 run_on_host "$DIR/teardown-guard.sh"
 
-log "4/6 stop the task (service desired-count 0)"
+log "4/8 stop TLS proxy + upload cert cache"
+run_on_host "$DIR/proxy-stop.sh" "$BUCKET" || warn "proxy-stop failed (continuing)"
+
+log "5/8 release Elastic IP + clear A record"
+release_eip "$id"
+zone="$(hosted_zone_id)"
+if [ -n "$zone" ] && [ "$zone" != "None" ]; then
+  a_record_delete "$DOMAIN" "$zone"
+fi
+
+log "6/8 stop the task (service desired-count 0)"
 "${AWS[@]}" ecs update-service --cluster "$CLUSTER" --service "$SERVICE" \
   --desired-count 0 >/dev/null
 wait_for_no_tasks
 
-log "5/6 terminate host (ASG desired 0) + complete ECS draining hook"
+log "7/8 terminate host (ASG desired 0) + complete ECS draining hook"
 terminate_host "$id"
 
-log "6/6 verify cold-off (instance terminated, EBS deleted)"
+log "8/8 verify cold-off (instance terminated, EBS deleted)"
 wait_for_termination "$id"
 
 log "Cold stop complete. Recovery point: s3://${BUCKET}/metadata/latest.txt"

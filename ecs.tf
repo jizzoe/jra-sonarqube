@@ -43,11 +43,20 @@ resource "aws_iam_role_policy" "ecs_host_ebs" {
   })
 }
 
-# Host security group: no inbound, all outbound (Option 2: SSM + image pulls egress)
+# Host security group: inbound 443 (Phase 2 TLS proxy) + all outbound
+# (Option 2: SSM + image pulls egress).
 resource "aws_security_group" "host" {
   name        = "jra-sonarqube-host"
-  description = "ECS host SG: no inbound, all outbound"
+  description = "ECS host SG: inbound 443 (TLS proxy); all outbound"
   vpc_id      = aws_vpc.main.id
+
+  ingress {
+    description = "Public HTTPS to the host TLS proxy (Phase 2)"
+    from_port   = 443
+    to_port     = 443
+    protocol    = "tcp"
+    cidr_blocks = ["0.0.0.0/0"]
+  }
 
   egress {
     from_port   = 0
@@ -91,6 +100,31 @@ locals {
     # 5. PostgreSQL data bind-mount directory (UID 999 = postgres).
     mkdir -p /var/lib/postgresql-data
     chown 999:999 /var/lib/postgresql-data
+
+    # 6. Phase 2: install Caddy (with the Route53 DNS-01 provider) and a
+    #    systemd unit for the public TLS proxy. The Caddyfile and start/stop
+    #    are managed by the orchestration (scripts/proxy-start.sh and
+    #    scripts/proxy-stop.sh), not here.
+    curl -fsSL "https://caddyserver.com/api/download?os=linux&arch=amd64&p=github.com/caddy-dns/route53" -o /usr/local/bin/caddy
+    chmod +x /usr/local/bin/caddy
+    mkdir -p /etc/caddy /var/lib/caddy
+    cat > /etc/systemd/system/caddy.service <<'CADDY_UNIT'
+    [Unit]
+    Description=Caddy (SonarQube public TLS proxy)
+    After=network.target
+
+    [Service]
+    ExecStart=/usr/local/bin/caddy run --config /etc/caddy/Caddyfile --adapter caddyfile
+    Environment=XDG_DATA_HOME=/var/lib/caddy
+    Environment=XDG_CONFIG_HOME=/etc/caddy
+    Environment=AWS_REGION=us-east-1
+    Restart=on-failure
+    RestartSec=5s
+
+    [Install]
+    WantedBy=multi-user.target
+    CADDY_UNIT
+    systemctl daemon-reload
   EOT
 }
 

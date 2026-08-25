@@ -15,6 +15,8 @@ ASG="${ASG:-jra-sonarqube-asg}"
 BUCKET="${BUCKET:-jra-sonarqube-dumps}"
 LOG_GROUP="${LOG_GROUP:-/ecs/jra-sonarqube}"
 DRAIN_HOOK="${DRAIN_HOOK:-ecs-managed-draining-termination-hook}"
+DOMAIN="${DOMAIN:-sonar.joericearchitect.com}"
+APEX_DOMAIN="${APEX_DOMAIN:-joericearchitect.com}"
 
 AWS=(aws --region "$AWS_REGION" --profile "$AWS_PROFILE")
 
@@ -202,5 +204,71 @@ sonar_up() {
   local ip="$1" body
   body="$(sonar_api "$ip" "/api/system/status")"
   printf '%s' "$body" | grep -q '"status":"UP"'
+}
+
+# --- Phase 2: public ingress (EIP + DNS A record + TLS proxy) ---------------
+
+# ID of the apex hosted zone (Route 53).
+hosted_zone_id() {
+  "${AWS[@]}" route53 list-hosted-zones-by-name --dns-name "${APEX_DOMAIN}" \
+    --query 'HostedZones[0].Id' --output text 2>/dev/null | sed 's#/hostedzone/##'
+}
+
+# Allocate a new Elastic IP; prints "<allocation-id> <public-ip>".
+allocate_eip() {
+  "${AWS[@]}" ec2 allocate-address --domain vpc \
+    --query '[AllocationId, PublicIp]' --output text
+}
+
+associate_eip() {
+  local alloc_id="$1" instance_id="$2"
+  "${AWS[@]}" ec2 associate-address --instance-id "$instance_id" \
+    --allocation-id "$alloc_id" >/dev/null
+}
+
+# Print "<allocation-id> <association-id> <public-ip>" for the EIP on an
+# instance, or "" when none.
+find_eip() {
+  local instance_id="$1" out
+  out="$("${AWS[@]}" ec2 describe-addresses \
+    --filters "Name=instance-id,Values=${instance_id}" \
+    --query 'Addresses[0].[AllocationId, AssociationId, PublicIp]' \
+    --output text 2>/dev/null || true)"
+  if [ -z "$out" ] || [ "$out" = "None" ]; then echo ""; else echo "$out"; fi
+}
+
+# Disassociate + release the EIP on an instance (idempotent; no-op if none).
+release_eip() {
+  local instance_id="$1" out alloc assoc
+  out="$(find_eip "$instance_id")"
+  [ -z "$out" ] && return 0
+  alloc="$(echo "$out" | awk '{print $1}')"
+  assoc="$(echo "$out" | awk '{print $2}')"
+  if [ -n "$assoc" ] && [ "$assoc" != "None" ]; then
+    "${AWS[@]}" ec2 disassociate-address --association-id "$assoc" >/dev/null 2>&1 || true
+  fi
+  if [ -n "$alloc" ] && [ "$alloc" != "None" ]; then
+    "${AWS[@]}" ec2 release-address --allocation-id "$alloc" >/dev/null 2>&1 || true
+  fi
+}
+
+# UPSERT an A record in the apex zone.
+a_record_upsert() {
+  local name="$1" value="$2" zone="$3" batch
+  batch="{\"Changes\":[{\"Action\":\"UPSERT\",\"ResourceRecordSet\":{\"Name\":\"${name}\",\"Type\":\"A\",\"TTL\":60,\"ResourceRecords\":[{\"Value\":\"${value}\"}]}}]}"
+  "${AWS[@]}" route53 change-resource-record-sets \
+    --hosted-zone-id "$zone" --change-batch "$batch" >/dev/null
+}
+
+# DELETE the A record (idempotent; no-op if absent).
+a_record_delete() {
+  local name="$1" zone="$2" value batch
+  value="$("${AWS[@]}" route53 list-resource-record-sets --hosted-zone-id "$zone" \
+    --query "ResourceRecordSets[?Name=='${name}.' && Type=='A'].ResourceRecords[0].Value | [0]" \
+    --output text 2>/dev/null || true)"
+  if [ -z "$value" ] || [ "$value" = "None" ]; then return 0; fi
+  batch="{\"Changes\":[{\"Action\":\"DELETE\",\"ResourceRecordSet\":{\"Name\":\"${name}\",\"Type\":\"A\",\"TTL\":60,\"ResourceRecords\":[{\"Value\":\"${value}\"}]}}]}"
+  "${AWS[@]}" route53 change-resource-record-sets \
+    --hosted-zone-id "$zone" --change-batch "$batch" >/dev/null
 }
 

@@ -7,7 +7,7 @@ source "$DIR/lib.sh"
 usage() { echo "usage: $0 [status|health|logs [sonarqube|postgres]]" >&2; exit 2; }
 
 do_status() {
-  local id="" arn="" ip="" meta=""
+  local id="" arn="" ip="" meta="" eip_out=""
   id="$(host_instance_id)"
   arn="$(task_arn)"
   ip="$(task_ip)"
@@ -18,6 +18,10 @@ do_status() {
   echo "Host    : ${id:-<none (cold-off)>}"
   echo "Task    : ${arn:-<none>}"
   [ -n "$ip" ] && [ "$ip" != "None" ] && echo "Task IP : ${ip}"
+  if [ -n "$id" ]; then
+    eip_out="$(find_eip "$id")"
+    [ -n "$eip_out" ] && echo "EIP     : $(echo "$eip_out" | awk '{print $3}') (https://${DOMAIN})"
+  fi
 
   echo "--- service ---"
   "${AWS[@]}" ecs describe-services --cluster "$CLUSTER" --services "$SERVICE" \
