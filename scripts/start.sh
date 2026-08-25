@@ -114,7 +114,10 @@ if [ -z "$zone" ] || [ "$zone" = "None" ]; then
 else
   a_record_upsert "$DOMAIN" "$eip_ip" "$zone"
   final_ip="$(task_ip)"
-  run_on_host "$DIR/proxy-start.sh" "$DOMAIN" "$final_ip" "$zone" "$BUCKET"
+  # Non-fatal: public HTTPS needs the registered domain; the UI stays reachable
+  # via SSM regardless.
+  ( run_on_host "$DIR/proxy-start.sh" "$DOMAIN" "$final_ip" "$zone" "$BUCKET" ) \
+    || warn "proxy start failed (UI still reachable via SSM)"
 fi
 
 log "Cold start complete. SonarQube UP; public at https://${DOMAIN} (${eip_ip:-no EIP})."
