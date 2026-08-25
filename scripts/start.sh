@@ -92,8 +92,6 @@ wait_for_new_task "$old_arn"
 log "6/8 health gate (/api/system/status = UP)"
 wait_for_healthy
 
-printf '%s' "$id" | "${AWS[@]}" s3 cp - "s3://${BUCKET}/metadata/restored.txt" >/dev/null
-
 log "7/8 allocate + associate Elastic IP"
 eip_ip=""
 existing_eip="$(find_eip "$id")"
@@ -119,5 +117,9 @@ else
   ( run_on_host "$DIR/proxy-start.sh" "$DOMAIN" "$final_ip" "$zone" "$BUCKET" ) \
     || warn "proxy start failed (UI still reachable via SSM)"
 fi
+
+# Marked only after full completion (restore + health + ingress), so a failure
+# in any later step leaves no marker and a re-run resumes the whole tail.
+printf '%s' "$id" | "${AWS[@]}" s3 cp - "s3://${BUCKET}/metadata/restored.txt" >/dev/null
 
 log "Cold start complete. SonarQube UP; public at https://${DOMAIN} (${eip_ip:-no EIP})."

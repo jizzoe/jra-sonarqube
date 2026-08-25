@@ -221,8 +221,14 @@ allocate_eip() {
 }
 
 associate_eip() {
-  local alloc_id="$1" instance_id="$2"
-  "${AWS[@]}" ec2 associate-address --instance-id "$instance_id" \
+  local alloc_id="$1" instance_id="$2" eni
+  # The ECS host has multiple ENIs (primary + the awsvpc task ENIs), so target
+  # the primary interface explicitly.
+  eni="$("${AWS[@]}" ec2 describe-instances --instance-ids "$instance_id" \
+    --query 'Reservations[0].Instances[0].NetworkInterfaces[?Attachment.DeviceIndex==0].NetworkInterfaceId | [0]' \
+    --output text 2>/dev/null || true)"
+  [ -z "$eni" ] || [ "$eni" = "None" ] && fail "no primary ENI for ${instance_id}"
+  "${AWS[@]}" ec2 associate-address --network-interface-id "$eni" \
     --allocation-id "$alloc_id" >/dev/null
 }
 
