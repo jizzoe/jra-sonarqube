@@ -102,6 +102,10 @@ resource "aws_ecs_task_definition" "app" {
 
       secrets = [
         { name = "SONAR_JDBC_PASSWORD", valueFrom = aws_secretsmanager_secret.postgres_app.arn },
+        # Only read on the FIRST boot against an empty DB (fresh install). The
+        # normal cold-start restores the S3 dump, which overwrites the admin
+        # user, so this is a fresh-install safety net, not the runtime password.
+        { name = "SONAR_ADMIN_PASSWORD", valueFrom = aws_secretsmanager_secret.sonarqube_admin.arn },
       ]
 
       portMappings = [

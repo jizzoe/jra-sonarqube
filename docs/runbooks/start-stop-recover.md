@@ -105,6 +105,20 @@ aws ssm start-session \
 then open `http://localhost:8080`. (The tunnel lands on the host's
 `127.0.0.1:8080`, which Caddy reverse-proxies to the task.)
 
+## Admin password
+
+- Default credentials are `admin` / `admin`.
+- The `sonarqube/admin` secret is injected as `SONAR_ADMIN_PASSWORD`, but
+  SonarQube only reads it on a **fresh install** (first boot against an empty
+  database). The normal cold-start restores the S3 dump, which overwrites the
+  admin user — so the password that actually wins is whatever was last saved in
+  the dump.
+- To change the password: **My Account → Security** in the UI. It is captured
+  by the next `cold-stop` backup and restored on every future `cold-start`.
+- If you change it in the UI, the `sonarqube/admin` secret becomes stale (it is
+  only consulted for a hypothetical future fresh install). Sync it:
+  `aws secretsmanager put-secret-value --secret-id sonarqube/admin --secret-string '<password>'`.
+
 ## Recover
 
 | Symptom | Action |
