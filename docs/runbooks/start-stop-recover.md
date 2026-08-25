@@ -92,17 +92,18 @@ Admin fallback (SSM, always available):
 - Interactive shell: `aws ssm start-session --target <host-id>`.
 - API check from the host: `curl http://<task-ip>:9000/api/system/status`
   (task IP from `make status`).
-- Browser UI via port-forward through the host to the task ENI:
+- Browser UI via port-forward to the host's localhost HTTP bridge (Caddy serves
+  `http://127.0.0.1:8080` and reverse-proxies to SonarQube's 9000):
 
 ```bash
 aws ssm start-session \
   --target <host-id> \
   --document-name AWS-StartPortForwardingSession \
-  --parameters '{"portNumber":["9000"],"localPortNumber":["9000"],"host":["<task-ip>"]}'
+  --parameters '{"portNumber":["8080"],"localPortNumber":["8080"]}'
 ```
 
-then open `http://localhost:9000`. (The `host` parameter forwards to the task's
-VPC-internal ENI through the managed node.)
+then open `http://localhost:8080`. (The tunnel lands on the host's
+`127.0.0.1:8080`, which Caddy reverse-proxies to the task.)
 
 ## Recover
 
