@@ -30,6 +30,12 @@ ${DOMAIN} {
     }
     reverse_proxy http://${TASK_IP}:9000
 }
+
+# Localhost-only plain-HTTP bridge, so the UI is reachable via SSM port-forward
+# before public DNS/TLS is live.
+http://127.0.0.1:8080 {
+    reverse_proxy http://${TASK_IP}:9000
+}
 CADDY
 
 systemctl daemon-reload
