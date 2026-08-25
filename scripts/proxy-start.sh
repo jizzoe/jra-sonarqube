@@ -31,9 +31,10 @@ ${DOMAIN} {
     reverse_proxy http://${TASK_IP}:9000
 }
 
-# Localhost-only plain-HTTP bridge, so the UI is reachable via SSM port-forward
-# before public DNS/TLS is live.
-http://127.0.0.1:8080 {
+# Plain-HTTP bridge on :8080 (catch-all host). Reachable only via SSM
+# port-forward; the host security group blocks 8080 externally. Lets the UI
+# load through the tunnel before public DNS/TLS is live.
+:8080 {
     reverse_proxy http://${TASK_IP}:9000
 }
 CADDY
