@@ -120,7 +120,8 @@ log "3/8 teardown guard (require a verified dump before destroying)"
 run_on_host "$DIR/teardown-guard.sh"
 
 log "4/8 stop TLS proxy + upload cert cache"
-run_on_host "$DIR/proxy-stop.sh" "$BUCKET" || warn "proxy-stop failed (continuing)"
+# Subshell so a cert-cache failure can't abort the teardown (run_on_host exits).
+( run_on_host "$DIR/proxy-stop.sh" "$BUCKET" ) || warn "proxy-stop failed (continuing)"
 
 log "5/8 release Elastic IP + clear A record"
 release_eip "$id"
